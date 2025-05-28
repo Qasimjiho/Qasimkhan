@@ -1,70 +1,84 @@
-# This workflow will upload a Python Package to PyPI when a release is created
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+import sys
+import asyncio
+from telethon import TelegramClient
+from telethon.tl.functions.account import ReportPeerRequest
+from telethon.tl.types import (
+    InputReportReasonSpam,
+    InputReportReasonViolence,
+    InputReportReasonPornography,
+    InputReportReasonChildAbuse,
+    InputReportReasonOther,
+    InputReportReasonCopyright,
+    InputReportReasonPersonalDetails,
+    InputReportReasonIllegalDrugs
+)
 
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
+# Your Telegram API credentials
+api_id = 123456  # Replace with your API ID
+api_hash = 'your_api_hash'  # Replace with your API hash
+phone_number = '+923XXXXXXXXX'  # Your phone number
 
-name: Upload Python Package
+# Report reasons
+report_reasons = {
+    1: ("Spam", InputReportReasonSpam()),
+    2: ("Violence", InputReportReasonViolence()),
+    3: ("Pornography", InputReportReasonPornography()),
+    4: ("Child Abuse", InputReportReasonChildAbuse()),
+    5: ("Illegal Drugs", InputReportReasonIllegalDrugs()),
+    6: ("Personal Details", InputReportReasonPersonalDetails()),
+    7: ("Copyright", InputReportReasonCopyright()),
+    8: ("Other", InputReportReasonOther())
+}
 
-on:
-  release:
-    types: [published]
+async def main():
+    client = TelegramClient("multi_report_session", api_id, api_hash)
+    await client.start(phone=phone_number)
 
-permissions:
-  contents: read
+    print("\n--- Telegram Multi-User Reporter ---\n")
 
-jobs:
-  release-build:
-    runs-on: ubuntu-latest
+    usernames_input = input("Enter usernames separated by comma (e.g. user1,user2): ")
+    usernames = [u.strip() if u.strip().startswith("@") else "@" + u.strip() for u in usernames_input.split(",")]
 
-    steps:
-      - uses: actions/checkout@v4
+    print("\nSelect a reason to report:")
+    for k, (text, _) in report_reasons.items():
+        print(f"{k}: {text}")
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
+    while True:
+        try:
+            reason_choice = int(input("Enter reason number: "))
+            if reason_choice in report_reasons:
+                break
+            else:
+                print("Invalid choice.")
+        except ValueError:
+            print("Enter a number.")
 
-      - name: Build release distributions
-        run: |
-          # NOTE: put your own distribution build steps here.
-          python -m pip install build
-          python -m build
+    while True:
+        try:
+            report_count = int(input("How many reports per user? "))
+            break
+        except ValueError:
+            print("Enter a valid number.")
 
-      - name: Upload distributions
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-dists
-          path: dist/
+    for username in usernames:
+        try:
+            entity = await client.get_entity(username)
+            print(f"\nReporting {username}...")
 
-  pypi-publish:
-    runs-on: ubuntu-latest
-    needs:
-      - release-build
-    permissions:
-      # IMPORTANT: this permission is mandatory for trusted publishing
-      id-token: write
+            for i in range(report_count):
+                await client(ReportPeerRequest(
+                    peer=entity,
+                    reason=report_reasons[reason_choice][1],
+                    message=f"Reported for {report_reasons[reason_choice][0]}"
+                ))
+                print(f"{username}: Report {i + 1} submitted.")
+                await asyncio.sleep(2)
 
-    # Dedicated environments with protections for publishing are strongly recommended.
-    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
-    environment:
-      name: pypi
-      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
-      # url: https://pypi.org/p/YOURPROJECT
-      #
-      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
-      # ALTERNATIVE: exactly, uncomment the following line instead:
-      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+        except Exception as e:
+            print(f"Error reporting {username}: {e}")
 
-    steps:
-      - name: Retrieve release distributions
-        uses: actions/download-artifact@v4
-        with:
-          name: release-dists
-          path: dist/
+    print("\nReporting complete.")
+    await client.disconnect()
 
-      - name: Publish release distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
+if name == "main":
+    asyncio.run(main())
